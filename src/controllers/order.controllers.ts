@@ -6,23 +6,17 @@ import Chat from "../models/chat.models";
 import Order from "../models/order.models";
 import { chatRoom, userMap } from "../index";
 import Message from "../models/message.models";
+import client from "../config/redis";
 
 // fetchUserChats
-export const fetchUserChats = async (parsedData: any, socket: any) => {
+export const fetchUserChats = async (userId: any, socket: any, io: any) => {
   try {
     // validation
-    if (!parsedData?.payload) {
-      throw new Error("Invalid payload structure");
+    if (!userId) {
+      throw new Error("user is required");
     }
-
-    // fetch data
-    const { userId } = parsedData.payload;
 
     // validation
-    if (!userId) {
-      throw new Error("userId is required");
-    }
-
     const user = await User.findById(userId);
     if (!user) {
       throw new Error("User not found");
@@ -37,19 +31,17 @@ export const fetchUserChats = async (parsedData: any, socket: any) => {
       .populate({
         path: "message",
         select: "_id sender",
-      }).lean().exec();
-    
-    // send message to client
-    socket.send(
-      JSON.stringify({
-        type: "fetchUserAllChats",
-        payload: {
-          success: true,
-          message: "User chats fetched successfully",
-          data: chats,
-        },
       })
-    );
+      .lean()
+      .exec();
+
+    // send message to client
+    socket.emit("fetchUserAllChats", {
+      success: true,
+      message: "All chats fetched",
+      data: chats,
+    });
+
     return;
   } catch (error) {
     console.log(error);
@@ -84,7 +76,7 @@ export const unseenMessages = async (parsedData: any, socket: any) => {
     const messages = await Message.find({ receiver: userId, isSeen: false });
 
     // send message length to client
-    if(socket.readyState === WebSocket.OPEN){
+    if (socket.readyState === WebSocket.OPEN) {
       socket.send(
         JSON.stringify({
           type: "numOfUnseenMessages",
@@ -115,8 +107,8 @@ export const markAsRead = async (parsedData: any, socket: any) => {
     }
 
     const participants = chatRoom.get(chatId);
-    const readerSocket = participants?.get(userId);           // reader (current user)
-    const senderSocket = participants?.get(receiverId);       // sender of the messages
+    const readerSocket = participants?.get(userId); // reader (current user)
+    const senderSocket = participants?.get(receiverId); // sender of the messages
 
     // Find unread messages sent by 'receiverId' to 'userId'
     const messages = await Message.find({
@@ -161,7 +153,10 @@ export const markAsRead = async (parsedData: any, socket: any) => {
 };
 
 // unseenMessageOfParticularChatIdOfUser
-export const unseenMessageOfParticularChatIdOfUser = async ( parsedData: any, socket: any ) => {
+export const unseenMessageOfParticularChatIdOfUser = async (
+  parsedData: any,
+  socket: any
+) => {
   try {
     // validation
     if (!parsedData?.payload) {
@@ -178,25 +173,23 @@ export const unseenMessageOfParticularChatIdOfUser = async ( parsedData: any, so
 
     // find allmessage of chat and update isSeen to true of receiver
     const counts = await Promise.all(
-      chatIds.map(
-        async (chatId:any) => {
-          const count = await Message.countDocuments({
-            chatId: chatId,
-            receiver: userId,
-            isSeen: false,
-          });
-          return { chatId, unSeenCount:count };
-        }
-      )
-    )
+      chatIds.map(async (chatId: any) => {
+        const count = await Message.countDocuments({
+          chatId: chatId,
+          receiver: userId,
+          isSeen: false,
+        });
+        return { chatId, unSeenCount: count };
+      })
+    );
 
     if (counts.length > 0) {
       socket?.send(
         JSON.stringify({
           type: "numOfUnseenMessages",
-          payload: counts
+          payload: counts,
         })
-      )
+      );
     }
 
     return;
@@ -207,21 +200,21 @@ export const unseenMessageOfParticularChatIdOfUser = async ( parsedData: any, so
 };
 
 // request order
-export const requestOrder = async (parsedData: any, socket: any) => {
+export const requestOrder = async (formData: any, socket: any, io: any) => {
   try {
     // validation
     if (
-      !parsedData?.payload?.formData?.location ||
-      !parsedData?.payload?.formData?.date ||
-      !parsedData?.payload?.formData?.time ||
-      !parsedData?.payload?.formData?.additionalInfo ||
-      !parsedData?.payload?.formData?.cabFare ||
-      !parsedData?.payload?.formData?.totalPrice ||
-      !parsedData?.payload?.formData?.eventId ||
-      !parsedData?.payload?.formData?.sender ||
-      !parsedData?.payload?.formData?.receiver ||
-      !parsedData?.payload?.formData?.subId ||
-      !parsedData?.payload?.formData?.unit
+      !formData?.location ||
+      !formData?.date ||
+      !formData?.time ||
+      !formData?.additionalInfo ||
+      !formData?.cabFare ||
+      !formData?.totalPrice ||
+      !formData?.eventId ||
+      !formData?.sender ||
+      !formData?.receiver ||
+      !formData?.subId ||
+      !formData?.unit
     ) {
       throw new Error("Invalid payload structure");
     }
@@ -239,8 +232,9 @@ export const requestOrder = async (parsedData: any, socket: any) => {
       receiver,
       subId,
       unit,
-    } = parsedData.payload.formData;
-    console.log("first", parsedData.payload.formData);
+    } = formData;
+
+    console.log("first", formData);
 
     // validation on event, user
     const [fromUser, toUser, isEvent] = await Promise.all([
@@ -285,7 +279,7 @@ export const requestOrder = async (parsedData: any, socket: any) => {
       sender,
       receiver,
       chatId: chat?._id,
-      text: parsedData.payload.formData,
+      text: formData,
       type: "order",
       order: order._id,
     });
@@ -302,35 +296,47 @@ export const requestOrder = async (parsedData: any, socket: any) => {
     if (!chatRoom?.has(chat?._id?.toString())) {
       chatRoom?.set(chat?._id?.toString(), new Map());
     }
-    
     let participants = chatRoom.get(chat?._id?.toString());
-    
+
+    // check if sender is not in chatRoom then add to it
     if (participants) {
       const senderId = message?.sender?.toString();
-      const existingSocket = participants.get(senderId);
-    
-      if (!existingSocket || existingSocket.readyState !== WebSocket.OPEN) {
+      const senderSocket = participants.get(senderId);
+
+      if (!senderSocket || senderSocket.readyState !== WebSocket.OPEN) {
         participants.set(senderId, socket);
       }
     }
-    
-    const senderWs = participants?.get(message?.sender?.toString());
+
     const receiverWs = participants?.get(message?.receiver?.toString());
-    
-    console.log("senderWs", senderWs?.readyState);
-    console.log("open websocket", WebSocket.OPEN);
-    console.log("receiverWs", receiverWs?.readyState);
 
-    // // send message to sender
-    // if (senderWs && senderWs?.readyState === WebSocket.OPEN) {
-    //   senderWs?.send(
-    //     JSON.stringify({ type: "receiveMessage", payload: message })
-    //   );
-    // } else {
-    //   console.log(`Sender socket for ${sender} is not open`);
-    // }
+    // isSender or isReceiver is online
+    const senderSocket = await client.get(
+      `user:${message?.sender?.toString()}`
+    );
+    const receiverSocket = await client.get(
+      `user:${message?.receiver?.toString()}`
+    );
 
-    // send message to receiver
+    // sent to sender
+    if (senderSocket) {
+      io.to(senderSocket).emit("newOrder", {
+        chatId: chat?._id,
+        success: true,
+        userId: message?.receiver?.toString(),
+      });
+    }
+
+    // sent to receiver
+    if (receiverSocket) {
+      io.to(receiverSocket).emit("newOrder", {
+        chatId: chat?._id,
+        success: true,
+        userId: message?.sender?.toString(),
+      });
+    }
+
+    // send message to receiver -> if chat is open
     if (receiverWs && receiverWs?.readyState === WebSocket.OPEN) {
       receiverWs.send(
         JSON.stringify({ type: "receiveMessage", payload: message })
@@ -339,21 +345,8 @@ export const requestOrder = async (parsedData: any, socket: any) => {
       console.log(`Receiver socket for ${receiver} is not open`);
     }
 
-    // if(receiverWs && receiverWs?.readyState === WebSocket.OPEN){
-    //   receiverWs?.send(
-    //     JSON.stringify({
-    //       type: "fetchUserAllChats",
-    //       payload: {
-    //         success: true,
-    //         message: "User chats fetched successfully",
-    //         data: chat,
-    //       },
-    //     })
-    //   );
-    // }
-
     // reload chat
-    if(receiverWs && receiverWs?.readyState === WebSocket.OPEN){
+    if (receiverWs && receiverWs?.readyState === WebSocket.OPEN) {
       receiverWs?.send(
         JSON.stringify({
           type: "reloadChat",
@@ -367,151 +360,78 @@ export const requestOrder = async (parsedData: any, socket: any) => {
     }
 
     // send response to client
-    if(senderWs && senderWs?.readyState === WebSocket.OPEN){
-      senderWs?.send(
-        JSON.stringify({
-          type: "orderStatus",
-          payload: {
-            success: true,
-            message: "Order request sent successfully",
-            data: message,
-          },
-        })
-      );
-    }
 
     return;
   } catch (error) {
     console.log("error", error);
     // send response to client
-    // senderWs?.send(
-    //   JSON.stringify({
-    //     type: "orderStatus",
-    //     payload: {
-    //       success: false,
-    //       message: "Order request failed",
-    //     },
-    //   })
-    // );
+    socket?.emit("orderStatus", {
+      success: false,
+      message: "Order request failed",
+    });
     throw new Error("Order request failed");
   }
 };
 
-// removeChatFromRoom
-export const removeUserFromChatRoom = (chatId: string, userId: string) => {
-  try {
-    // fetch participants
-    const participants = chatRoom.get(chatId);
-
-    // if participants exist delete user from participants
-    if (participants) {
-      participants.delete(userId);
-    }
-
-    // if chatRoom is empty delete chatRoom
-    if (chatRoom.size === 0) {
-      chatRoom.delete(chatId);
-    }
-  } catch (error) {
-    console.log("error", error);
-  }
-};
-
-// registerUserInChatRoom
-export const registerUserInChatRoom = async (
-  parsedData: {
-    payload: {
-      chatId: string;
-      userId: string;
-    };
-  },
-  socket: any
-): Promise<void> => {
-  try {
-    const { payload } = parsedData;
-    const { chatId, userId } = payload || {};
-
-    // Simple and clear validation
-    if (!chatId || !userId) {
-      throw new Error("chatId and userId are required");
-    }
-
-    // Initialize chat room if it doesn't exist
-    if (!chatRoom.has(chatId)) {
-      chatRoom.set(chatId, new Map());
-    }
-
-    // Add or update participant socket
-    const participants = chatRoom.get(chatId)!;
-
-    participants.set(userId, socket); // Always update to ensure the latest socket
-
-    // Handle disconnection
-    socket.on("disconnect", () => {
-      removeUserFromChatRoom(chatId, userId);
-    });
-
-    console.log(`User ${userId} registered in chat room ${chatId}`);
-  } catch (error) {
-    console.error("Error in registerUserInChatRoom:", error);
-  }
-};
-
 // sendMessage
-export const sendMessage = async (parsedData: any): Promise<any> => {
+export const sendMessage = async (
+  messagePayload: any,
+  io: any
+): Promise<any> => {
   try {
     // Validate payload
     if (
-      !parsedData?.payload ||
-      !parsedData.payload.sender ||
-      !parsedData.payload.receiver ||
-      !parsedData.payload.chatId ||
-      !parsedData.payload.text
+      !messagePayload ||
+      !messagePayload.sender ||
+      !messagePayload.receiver ||
+      !messagePayload.chatId ||
+      !messagePayload.text
     ) {
-      console.log("Invalid data received:", parsedData);
+      console.log("Invalid data received:", messagePayload);
       return;
     }
 
-    const { sender, receiver, chatId, text } = parsedData.payload;
+    const { sender, receiver, chatId, text } = messagePayload;
 
     // Get chat participants
-    const participants = chatRoom.get(chatId);
-    
-    if (!participants) {
-      console.log("No active participants found for chatId:", chatId);
-      return;
-    }
+    const senderSocket = await client.hget(`chat:${chatId}`, sender);
+    const receiverSocket = await client.hget(`chat:${chatId}`, receiver);
 
-    const senderSocket = participants?.get(sender);
-    const receiverSocket = participants?.get(receiver);
-    console.log("senderSocket", senderSocket?.readyState);
-    console.log("receiverSocket", receiverSocket?.readyState);
+    console.log("senderSocket", senderSocket);
+    console.log("receiverSocket", receiverSocket);
 
-    const isReceiverOnline = receiverSocket?.readyState === WebSocket.OPEN;
-    const isChatOpen = userMap?.get(receiver) === chatId;
+    const isReceiverOnline = await client.get(`user:${receiver}`);
+    const receiverActiveChatId = await client.get(`activeChat:${receiver}`);
     console.log("isReceiverOnline", isReceiverOnline);
-    console.log("isChatOpen", isChatOpen);
+    console.log("receiverActiveChatId", receiverActiveChatId);
 
     // Create and save message
-    const message = new Message({ sender, receiver, chatId, text, isSeen: isReceiverOnline && isChatOpen });
+    const message = new Message({
+      sender,
+      receiver,
+      chatId,
+      text,
+      isSeen: isReceiverOnline && receiverActiveChatId === chatId,
+    });
     await message.save();
 
-    // Send message to sender
-    if (senderSocket?.readyState === WebSocket.OPEN) {
-      senderSocket.send(
-        JSON.stringify({ type: "receiveMessage", payload: message })
-      );
-    } else {
-      console.log(`Sender socket for ${sender} is not open`);
+    console.log("message", message);  
+
+    if (receiverActiveChatId === chatId) {
+      // means they are in same chat
+
+      // send live message to receiver and sender
+      if (receiverSocket) {
+        io.to(receiverSocket).emit("receiveMessage", message);
+      } else {
+        console.log(`Receiver socket for ${receiver} is not open`);
+      }
     }
 
-    // Send message to receiver
-    if (isReceiverOnline) {
-      receiverSocket.send(
-        JSON.stringify({ type: "receiveMessage", payload: message })
-      );
+    if(senderSocket) {
+      io.to(senderSocket).emit("receiveMessage", message);
     } else {
-      console.log(`Receiver socket for ${receiver} is not open`);
+      console.log(`Sender socket for ${sender} is not open`);
     }
 
     // Update chat with the new message
@@ -560,44 +480,6 @@ export const fetchAllMessages = async (
 
     // return res
     return SuccessResponse(res, 200, "Messages fetched successfully", data);
-  } catch (error) {
-    console.log(error);
-    return ErrorResponse(res, 500, "Internal server error");
-  }
-};
-
-// fetchChat
-export const fetchChat = async (req: Request, res: Response): Promise<any> => {
-  try {
-    // fetch data
-    const userId = req.user?.id;
-
-    // validation
-    if (!userId) {
-      return ErrorResponse(res, 400, "All fields are required");
-    }
-
-    // fetch user
-    const user = await User.findById(userId);
-
-    // validation
-    if (!user) {
-      return ErrorResponse(res, 404, "User not found");
-    }
-
-    // fetch chats
-    const data = await Chat.find({ participants: userId })
-      .populate({
-        path: "participants",
-        select: "_id username image",
-      })
-      .populate({
-        path: "message",
-        select: "_id text isSeen receiver",
-      });
-
-    // return res
-    return SuccessResponse(res, 200, "Chats fetched successfully", data);
   } catch (error) {
     console.log(error);
     return ErrorResponse(res, 500, "Internal server error");
@@ -724,7 +606,7 @@ export const acceptOrder = async (parsedData: any, socket: any) => {
     // participants?.set(message?.sender?.toString(), socket);
     // participants?.set(message?.receiver?.toString(), socket);
 
-    if(!participants){
+    if (!participants) {
       return;
     }
 
@@ -819,7 +701,7 @@ export const reloadChatPage = async (parsedData: any, socket: any) => {
     // fetch chat
     const chat = await Chat.findById(chatId);
 
-    if(!chat) {
+    if (!chat) {
       throw new Error("Chat not found");
     }
 
@@ -827,13 +709,13 @@ export const reloadChatPage = async (parsedData: any, socket: any) => {
     const participants = chatRoom.get(chatId);
 
     // if participants exist delete user from participants
-    if(!participants) {
+    if (!participants) {
       return;
     }
 
-    const receiverWs = participants.get(receiverId);  
+    const receiverWs = participants.get(receiverId);
     console.log("receiverWs::::", receiverWs);
-    if(!receiverWs) {
+    if (!receiverWs) {
       return;
     }
 

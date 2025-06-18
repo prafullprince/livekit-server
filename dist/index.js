@@ -35,6 +35,8 @@ exports.chatRoom = new Map();
 exports.userMap = new Map();
 exports.senderSocket = null;
 exports.receiverSocket = null;
+// allowed origins
+const allowedOrigins = ['https://www.rentabuddy.in/', 'https://rent-a-buddy-client.vercel.app/'];
 // wesocket logic
 wss.on("connection", (socket) => {
     console.log("connected");
@@ -194,7 +196,17 @@ app.use((0, express_fileupload_1.default)({
     preserveExtension: true,
 }));
 app.use((0, cookie_parser_1.default)());
-app.use((0, cors_1.default)());
+app.use((0, cors_1.default)({
+    origin: function (origin, callback) {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        }
+        else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    credentials: true
+}));
 app.use((0, helmet_1.default)());
 app.use((0, compression_1.default)());
 // app.use(morgan("combined")); // Logs requests

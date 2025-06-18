@@ -39,12 +39,14 @@ const fetchUserChats = (parsedData, socket) => __awaiter(void 0, void 0, void 0,
         }
         // fetch chats
         const chats = yield chat_models_1.default.find({ participants: userId })
-            .select("_id participants")
             .populate({
             path: "participants",
             select: "_id username image",
-        });
-        console.log("first", chats);
+        })
+            .populate({
+            path: "message",
+            select: "_id sender",
+        }).lean().exec();
         // send message to client
         socket.send(JSON.stringify({
             type: "fetchUserAllChats",
@@ -103,35 +105,40 @@ exports.unseenMessages = unseenMessages;
 // markAsRead
 const markAsRead = (parsedData, socket) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        // validation
         if (!(parsedData === null || parsedData === void 0 ? void 0 : parsedData.payload)) {
             throw new Error("Invalid payload structure");
         }
-        // fetch data
         const { chatId, userId, receiverId } = parsedData.payload;
-        // validation
         if (!chatId || !userId) {
             throw new Error("Invalid payload structure");
         }
-        // chatRoom
-        if (!index_1.chatRoom.get(chatId)) {
-            index_1.chatRoom.set(chatId, new Map());
-        }
-        // participants
         const participants = index_1.chatRoom.get(chatId);
-        participants === null || participants === void 0 ? void 0 : participants.set(userId, socket);
-        // find allmessage of chat and update isSeen to true of sender message
-        const messages = yield message_models_1.default.find({ chatId: chatId, receiver: receiverId });
+        const readerSocket = participants === null || participants === void 0 ? void 0 : participants.get(userId); // reader (current user)
+        const senderSocket = participants === null || participants === void 0 ? void 0 : participants.get(receiverId); // sender of the messages
+        // Find unread messages sent by 'receiverId' to 'userId'
+        const messages = yield message_models_1.default.find({
+            chatId,
+            receiver: userId,
+            sender: receiverId,
+            isSeen: false,
+        });
         if (messages.length > 0) {
-            yield message_models_1.default.updateMany({ chatId: chatId, receiver: receiverId }, { $set: { isSeen: true } });
+            yield message_models_1.default.updateMany({ chatId, receiver: userId, sender: receiverId, isSeen: false }, { $set: { isSeen: true } });
         }
-        // // if sender is live mark their message as seen
-        // const senderSocket = participants?.get(receiverId);
-        // if(senderSocket && senderSocket?.readyState === WebSocket.OPEN){
-        //   senderSocket.send(
-        //     JSON.stringify({ type: "markAsReadYourMessage" })
-        //   );
-        // }
+        // Notify sender that their message was read
+        if (senderSocket && senderSocket.readyState === WebSocket.OPEN) {
+            senderSocket.send(JSON.stringify({
+                type: "markAsReadYourMessage",
+                payload: { success: true, isSeen: true, byUserId: userId },
+            }));
+        }
+        // Optionally notify the reader as well
+        if (readerSocket && readerSocket.readyState === WebSocket.OPEN) {
+            readerSocket.send(JSON.stringify({
+                type: "markAsReadConfirmation",
+                payload: { success: true },
+            }));
+        }
         return;
     }
     catch (error) {
