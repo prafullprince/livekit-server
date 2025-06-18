@@ -169,13 +169,13 @@ const getSubCategoriesDetailsOfAllEvents = (req, res) => __awaiter(void 0, void 
         const subCategoryId = req.body.subCategoryId;
         const limitNumber = parseInt(limit, 10);
         // validation
-        if (isNaN(limitNumber) ||
-            limitNumber < 1 ||
-            !subCategoryId) {
+        if (isNaN(limitNumber) || limitNumber < 1 || !subCategoryId) {
             return res.status(400).json({ message: "Invalid pagination parameters" });
         }
         // isSubCategoryExist
-        const isSubCategory = yield subcategory_models_1.default.findOne({ _id: subCategoryId }).select("events").lean();
+        const isSubCategory = yield subcategory_models_1.default.findOne({ _id: subCategoryId })
+            .select("events")
+            .lean();
         // validation
         if (!isSubCategory) {
             return (0, apiResponse_helper_1.ErrorResponse)(res, 404, "Subcategory does not exist");
@@ -192,7 +192,9 @@ const getSubCategoriesDetailsOfAllEvents = (req, res) => __awaiter(void 0, void 
             }
         }
         // filter all events
-        const data = yield event_models_1.default.find(query).sort({ createdAt: -1 }).limit(limitNumber);
+        const data = yield event_models_1.default.find(query)
+            .sort({ createdAt: -1 })
+            .limit(limitNumber);
         // validation
         if (data.length === 0) {
             return (0, apiResponse_helper_1.SuccessResponse)(res, 200, "no events remained", []);
@@ -205,8 +207,8 @@ const getSubCategoriesDetailsOfAllEvents = (req, res) => __awaiter(void 0, void 
             pagination: {
                 hasmore,
                 nextCursor,
-                data
-            }
+                data,
+            },
         });
     }
     catch (error) {

@@ -162,6 +162,7 @@ const globalLimiter = rateLimit({
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(
+  // @ts-ignore
   fileUpload({
     useTempFiles: true,
     tempFileDir: "/tmp/",

@@ -146,7 +146,9 @@ const globalLimiter = (0, express_rate_limit_1.default)({
 // Middleware
 app.use(express_1.default.urlencoded({ extended: true }));
 app.use(express_1.default.json());
-app.use((0, express_fileupload_1.default)({
+app.use(
+// @ts-ignore
+(0, express_fileupload_1.default)({
     useTempFiles: true,
     tempFileDir: "/tmp/",
     limits: { fileSize: 5 * 1024 * 1024 },
