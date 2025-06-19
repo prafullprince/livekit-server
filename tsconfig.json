@@ -9,8 +9,8 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "typeRoots": ["./node_modules/@types", "./src/types"],
-    // "types": ["express-fileupload"]
+    "types": ["express-fileupload"]
   },
   "include": ["src", "express.d.ts"],
-  "exclude": ["node_modules"]
+  "exclude": ["dist"]
 }

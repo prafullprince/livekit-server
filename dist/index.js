@@ -92,6 +92,19 @@ io.on("connection", (socket) => {
             return;
         yield redis_1.default.del(`activeChat:${userId}`);
     }));
+    // startCall
+    socket.on("startCall", (_a) => __awaiter(void 0, [_a], void 0, function* ({ to, from, room }) {
+        console.log("startCall");
+        if (!to || !from || !room)
+            return;
+        const targetSocket = yield redis_1.default.get(`user:${to}`);
+        if (!targetSocket)
+            return;
+        // await client.set(`activeCall:${to}`, room);
+        // await client.set(`activeCall:${from}`, room);
+        // send to receiver
+        io.to(targetSocket).emit("incomingCall", { fromUserId: from, room });
+    }));
     // requestOrder
     socket.on("requestOrder", (formData) => {
         console.log("requestOrder");

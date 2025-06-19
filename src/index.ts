@@ -97,6 +97,22 @@ io.on("connection", (socket: any) => {
     await client.del(`activeChat:${userId}`);
   });
 
+  // startCall
+  socket.on("startCall", async ({ to, from, room }: any) => {
+    console.log("startCall");
+
+    if(!to || !from || !room) return;
+
+    const targetSocket = await client.get(`user:${to}`);
+    if(!targetSocket) return;
+
+    // await client.set(`activeCall:${to}`, room);
+    // await client.set(`activeCall:${from}`, room);
+
+    // send to receiver
+    io.to(targetSocket).emit("incomingCall", { fromUserId: from, room });
+  });
+
   // requestOrder
   socket.on("requestOrder", (formData: any) => {
     console.log("requestOrder");
