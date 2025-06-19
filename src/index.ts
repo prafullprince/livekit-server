@@ -113,6 +113,39 @@ io.on("connection", (socket: any) => {
     io.to(targetSocket).emit("incomingCall", { fromUserId: from, room });
   });
 
+  // inCall
+  socket.on("inCall", async ({ to, room }: any) => {
+    console.log("inCall");
+
+    const toSocket = await client.get(`user:${to}`);
+    if(!toSocket) return;
+
+    // send to sender
+    io.to(toSocket).emit("inCall", { toUserId: to, room });
+  });
+
+  // endCall
+  socket.on("endCall", async ({ to, room }: any) => {
+    console.log("endCall");
+
+    const toSocket = await client.get(`user:${to}`);
+    if(!toSocket) return;
+
+    // send to sender
+    io.to(toSocket).emit("endCall", { toUserId: to, room });
+  });
+
+  // declined
+  socket.on("declined", async ({ to, room }: any) => {
+    console.log("declined");
+
+    const toSocket = await client.get(`user:${to}`);
+    if(!toSocket) return;
+
+    // send to sender
+    io.to(toSocket).emit("declined", { toUserId: to, room });
+  });
+
   // requestOrder
   socket.on("requestOrder", (formData: any) => {
     console.log("requestOrder");

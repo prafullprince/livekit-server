@@ -105,6 +105,33 @@ io.on("connection", (socket) => {
         // send to receiver
         io.to(targetSocket).emit("incomingCall", { fromUserId: from, room });
     }));
+    // inCall
+    socket.on("inCall", (_a) => __awaiter(void 0, [_a], void 0, function* ({ to, room }) {
+        console.log("inCall");
+        const toSocket = yield redis_1.default.get(`user:${to}`);
+        if (!toSocket)
+            return;
+        // send to sender
+        io.to(toSocket).emit("inCall", { toUserId: to, room });
+    }));
+    // endCall
+    socket.on("endCall", (_a) => __awaiter(void 0, [_a], void 0, function* ({ to, room }) {
+        console.log("endCall");
+        const toSocket = yield redis_1.default.get(`user:${to}`);
+        if (!toSocket)
+            return;
+        // send to sender
+        io.to(toSocket).emit("endCall", { toUserId: to, room });
+    }));
+    // declined
+    socket.on("declined", (_a) => __awaiter(void 0, [_a], void 0, function* ({ to, room }) {
+        console.log("declined");
+        const toSocket = yield redis_1.default.get(`user:${to}`);
+        if (!toSocket)
+            return;
+        // send to sender
+        io.to(toSocket).emit("declined", { toUserId: to, room });
+    }));
     // requestOrder
     socket.on("requestOrder", (formData) => {
         console.log("requestOrder");
