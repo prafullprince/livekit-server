@@ -4,7 +4,7 @@ configDotenv();
 
 
 const client = new Redis(
-//  process.env.REDIS_URL!
+ process.env.REDIS_URL!
 );
 
 client.on('connect', () => {
