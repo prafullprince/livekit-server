@@ -9,7 +9,7 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "typeRoots": ["./node_modules/@types", "./src/types"],
-    "types": ["express"]
+    "types": []
   },
   "include": ["src", "express.d.ts"],
   "exclude": ["dist"]
