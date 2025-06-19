@@ -21,7 +21,11 @@ import paymentRoutes from "./routes/payment.routes";
 import connectDB from "./config/mongodb";
 import { cloudinaryConnect } from "./config/cloudinary";
 import client from "./config/redis";
-import { fetchUserChats, requestOrder, sendMessage } from "./controllers/order.controllers";
+import {
+  fetchUserChats,
+  requestOrder,
+  sendMessage,
+} from "./controllers/order.controllers";
 
 dotenv.config(); // Load environment variables
 
@@ -48,7 +52,6 @@ const allowedOrigins = [
 
 // socket logic
 io.on("connection", (socket: any) => {
-
   // Register user
   socket.on("register", async ({ userId }: { userId: any }) => {
     // Store userId -> socketId
@@ -82,7 +85,7 @@ io.on("connection", (socket: any) => {
   socket.on("openChat", async ({ chatId, userId }: any) => {
     console.log("openChat");
 
-    if(!chatId || !userId) return;
+    if (!chatId || !userId) return;
 
     // mark this user is online in this chat
     await client.set(`activeChat:${userId}`, chatId);
@@ -92,7 +95,7 @@ io.on("connection", (socket: any) => {
   socket.on("closeChat", async ({ chatId, userId }: any) => {
     console.log("closeChat");
 
-    if(!chatId || !userId) return;
+    if (!chatId || !userId) return;
 
     await client.del(`activeChat:${userId}`);
   });
@@ -101,16 +104,23 @@ io.on("connection", (socket: any) => {
   socket.on("startCall", async ({ to, from, room }: any) => {
     console.log("startCall");
 
-    if(!to || !from || !room) return;
+    // validation
+    if (!to || !from || !room) return;
 
-    const targetSocket = await client.get(`user:${to}`);
-    if(!targetSocket) return;
+    let targetSocket = await client.get(`user:${to}`);
+    if (!targetSocket) {
+      targetSocket = await client.hget(`chat:${room}`, to);
+      if (!targetSocket) return;
+
+      // send to receiver
+      io.to(targetSocket).emit("incomingCall", { fromUserId: from, room });
+    } else {
+      // send to receiver
+      io.to(targetSocket).emit("incomingCall", { fromUserId: from, room });
+    }
 
     // await client.set(`activeCall:${to}`, room);
     // await client.set(`activeCall:${from}`, room);
-
-    // send to receiver
-    io.to(targetSocket).emit("incomingCall", { fromUserId: from, room });
   });
 
   // inCall
@@ -118,7 +128,7 @@ io.on("connection", (socket: any) => {
     console.log("inCall");
 
     const toSocket = await client.get(`user:${to}`);
-    if(!toSocket) return;
+    if (!toSocket) return;
 
     // send to sender
     io.to(toSocket).emit("inCall", { toUserId: to, room });
@@ -129,7 +139,7 @@ io.on("connection", (socket: any) => {
     console.log("endCall");
 
     const toSocket = await client.get(`user:${to}`);
-    if(!toSocket) return;
+    if (!toSocket) return;
 
     // send to sender
     io.to(toSocket).emit("endCall", { toUserId: to, room });
@@ -140,7 +150,7 @@ io.on("connection", (socket: any) => {
     console.log("declined");
 
     const toSocket = await client.get(`user:${to}`);
-    if(!toSocket) return;
+    if (!toSocket) return;
 
     // send to sender
     io.to(toSocket).emit("declined", { toUserId: to, room });
@@ -181,10 +191,10 @@ io.on("connection", (socket: any) => {
     // remove register chatRoom
 
     // -> remove user from all chat
-    if(chatUserId && chatIds) {
-      chatIds.forEach( async (chatId)=>{
+    if (chatUserId && chatIds) {
+      chatIds.forEach(async (chatId) => {
         await client.hdel(`chat:${chatId}`, chatUserId);
-      })
+      });
     }
 
     // -> remove socket from all chat
