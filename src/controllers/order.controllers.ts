@@ -8,6 +8,30 @@ import { chatRoom, userMap } from "../index";
 import Message from "../models/message.models";
 import client from "../config/redis";
 
+// chaeckIsInCall
+export const checkIsInCall = async (req: Request, res: Response): Promise<any> => {
+  try {
+    // fetch data
+    const { userId, room } = req.body;
+
+    // validation
+    if (!userId || !room) {
+      return ErrorResponse(res, 400, "All fields are required");
+    }
+
+    // now check if user is in call
+    const isInCallRoom = await client.get(`activeCall:${userId}`);
+    if (isInCallRoom && isInCallRoom === room) {
+      return SuccessResponse(res, 200, "User is in call", true);
+    }
+
+    return SuccessResponse(res, 200, "User is not in call", false);
+  } catch (error) {
+    console.log(error);
+    return ErrorResponse(res, 500, "Internal server error");
+  }
+}
+
 // fetchUserChats
 export const fetchUserChats = async (userId: any, socket: any, io: any) => {
   try {

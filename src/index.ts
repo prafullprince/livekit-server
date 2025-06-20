@@ -101,7 +101,7 @@ io.on("connection", (socket: any) => {
   });
 
   // startCall
-  socket.on("startCall", async ({ to, from, room }: any) => {
+  socket.on("startCall", async ({ to, from, room, isVideoCall }: any) => {
     console.log("startCall");
 
     // validation
@@ -113,10 +113,10 @@ io.on("connection", (socket: any) => {
       if (!targetSocket) return;
 
       // send to receiver
-      io.to(targetSocket).emit("incomingCall", { fromUserId: from, room });
+      io.to(targetSocket).emit("incomingCall", { fromUserId: from, room, isVideoCall });
     } else {
       // send to receiver
-      io.to(targetSocket).emit("incomingCall", { fromUserId: from, room });
+      io.to(targetSocket).emit("incomingCall", { fromUserId: from, room, video: isVideoCall });
     }
 
     // await client.set(`activeCall:${to}`, room);
